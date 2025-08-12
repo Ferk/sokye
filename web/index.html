@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sokoban with Emscripten</title>
+    <style>
+        body { font-family: monospace; }
+        #game-board { line-height: 0; }
+        .tile {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            font-size: 16px;
+            text-align: center;
+            vertical-align: top;
+            box-sizing: border-box;
+            background-color: #f0f0f0;
+        }
+        .tile.wall { background-color: #444; color: #fff; }
+        .tile.player { background-color: #f0f0f0; color: #00f; }
+        .tile.box { background-color: #f0f0f0; color: #d70; }
+        .tile.goal { background-color: #ffc; border: 1px solid #d70; }
+        .tile.player-on-goal { background-color: #ffc; color: #00f; }
+        .tile.box-on-goal { background-color: #ffc; color: #d70; }
+    </style>
+</head>
+<body>
+    <h1>Sokoban</h1>
+    <div id="game-board"></div>
+    <div id="status"></div>
+    <script src="sokoban.js"></script>
+    <script>
+        const levelData = `
+#####
+#@  #
+#$* #
+#.  #
+#####
+`;
+
+        const boardElement = document.getElementById('game-board');
+        const statusElement = document.getElementById('status');
+        let c_sokoban_init;
+        let c_sokoban_handle_input;
+        let c_sokoban_get_rows;
+        let c_sokoban_get_cols;
+        let c_sokoban_get_tile;
+        let c_sokoban_is_game_won;
+
+        Module.onRuntimeInitialized = () => {
+            // C-wrappers for the exported functions
+            c_sokoban_init = Module.cwrap('sokoban_init_web', null, ['string']);
+            c_sokoban_handle_input = Module.cwrap('sokoban_handle_input', null, ['number']);
+            c_sokoban_get_rows = Module.cwrap('sokoban_get_rows', 'number', []);
+            c_sokoban_get_cols = Module.cwrap('sokoban_get_cols', 'number', []);
+            c_sokoban_get_tile = Module.cwrap('sokoban_get_tile', 'number', ['number', 'number']);
+            c_sokoban_is_game_won = Module.cwrap('sokoban_is_game_won', 'boolean', []);
+
+            initGame();
+            window.addEventListener('keydown', handleKeyPress);
+        };
+
+        function initGame() {
+            c_sokoban_init(levelData.trim());
+            drawBoard();
+        }
+
+        function drawBoard() {
+            boardElement.innerHTML = '';
+            const rows = c_sokoban_get_rows();
+            const cols = c_sokoban_get_cols();
+
+            for (let i = 0; i < rows; i++) {
+                for (let j = 0; j < cols; j++) {
+                    const tileChar = String.fromCharCode(c_sokoban_get_tile(i, j));
+                    const tileDiv = document.createElement('span');
+                    tileDiv.classList.add('tile');
+                    tileDiv.textContent = tileChar;
+
+                    switch (tileChar) {
+                        case '#': tileDiv.classList.add('wall'); break;
+                        case '@': tileDiv.classList.add('player'); break;
+                        case '+': tileDiv.classList.add('player-on-goal'); break;
+                        case '$': tileDiv.classList.add('box'); break;
+                        case '*': tileDiv.classList.add('box-on-goal'); break;
+                        case '.': tileDiv.classList.add('goal'); break;
+                        case ' ': tileDiv.classList.add('floor'); break;
+                    }
+                    boardElement.appendChild(tileDiv);
+                }
+                boardElement.appendChild(document.createElement('br'));
+            }
+            if (c_sokoban_is_game_won()) {
+                statusElement.textContent = "Congratulations! You won!";
+            } else {
+                statusElement.textContent = "";
+            }
+        }
+
+        function handleKeyPress(event) {
+            let inputChar = '';
+            switch (event.key) {
+                case 'ArrowUp':
+                case 'w':
+                    inputChar = 'w';
+                    break;
+                case 'ArrowDown':
+                case 's':
+                    inputChar = 's';
+                    break;
+                case 'ArrowLeft':
+                case 'a':
+                    inputChar = 'a';
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                    inputChar = 'd';
+                    break;
+                case 'u':
+                    inputChar = 'u';
+                    break;
+                case 'r':
+                    inputChar = 'r';
+                    break;
+                default:
+                    return;
+            }
+            c_sokoban_handle_input(inputChar.charCodeAt(0));
+            drawBoard();
+        }
+    </script>
+</body>
+</html>
