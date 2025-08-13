@@ -12,20 +12,25 @@ WEB_SRCS = sokoban.c main_emsdk.c
 TERMINAL_OBJS = $(TERMINAL_SRCS:.c=.o)
 
 # Executable names
-TERMINAL_EXE = sokoban_terminal
+TERMINAL_EXE = sokterm
 WEB_JS = web/sokoban.js
 
 .PHONY: all terminal web serve clean
 
 all: terminal web
 
-terminal: $(TERMINAL_SRCS)
-	$(CC) $(CFLAGS) $^ -o $(TERMINAL_EXE)
+terminal: $(TERMINAL_EXE)
+
+web: $(WEB_JS)
+
 
 %.o: %.c sokoban.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
-web: $(WEB_SRCS)
+$(TERMINAL_EXE): $(TERMINAL_SRCS)
+	$(CC) $(CFLAGS) $^ -o $(TERMINAL_EXE)
+
+$(WEB_JS): $(WEB_SRCS)
 	$(EMCC) $(CFLAGS) $(EMCCFLAGS) $^ -o $(WEB_JS)
 
 # Run a local web server (Python 3)

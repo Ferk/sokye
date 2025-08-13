@@ -4,9 +4,14 @@
     <title>Sokoban with Emscripten</title>
     <style>
         body { font-family: monospace; }
-        #game-board { line-height: 0; }
+		#game-board {
+			display: grid;
+			/* This will dynamically create columns based on the number of columns in your game */
+			grid-template-columns: repeat(var(--cols), 20px); 
+			line-height: initial; /* Reset the line-height */
+		}
         .tile {
-            display: inline-block;
+			display: block;
             width: 20px;
             height: 20px;
             font-size: 16px;
@@ -21,22 +26,25 @@
         .tile.goal { background-color: #ffc; border: 1px solid #d70; }
         .tile.player-on-goal { background-color: #ffc; color: #00f; }
         .tile.box-on-goal { background-color: #ffc; color: #d70; }
+        .tile.ice { background-color: #cff; color: #eee; }
+        .tile.player-on-ice { background-color: #cff; color: #00f; }
+        .tile.box-on-ice { background-color: #cff; color: #d70; }
     </style>
 </head>
 <body>
-    <h1>Sokoban</h1>
     <div id="game-board"></div>
     <div id="status"></div>
     <script src="sokoban.js"></script>
     <script>
         const levelData = `
-#####
-#@  #
-#$* #
-#.  #
+################
+#@     ~~~~~"~   
+#$* #   ~"~ 
+#.  #    ~
 #####
 `;
 
+        const eventTicTime = 100;
         const boardElement = document.getElementById('game-board');
         const statusElement = document.getElementById('status');
         let c_sokoban_init;
@@ -49,12 +57,14 @@
         Module.onRuntimeInitialized = () => {
             // C-wrappers for the exported functions
             c_sokoban_init = Module.cwrap('sokoban_init_web', null, ['string']);
-            c_sokoban_handle_input = Module.cwrap('sokoban_handle_input', null, ['number']);
+            c_sokoban_handle_input = Module.cwrap('sokoban_handle_input', 'boolean', ['number']);
+            c_sokoban_is_event_ongoing = Module.cwrap('sokoban_is_event_ongoing', 'boolean', []);
+            c_sokoban_process_event = Module.cwrap('sokoban_process_event', 'boolean', []);
             c_sokoban_get_rows = Module.cwrap('sokoban_get_rows', 'number', []);
             c_sokoban_get_cols = Module.cwrap('sokoban_get_cols', 'number', []);
             c_sokoban_get_tile = Module.cwrap('sokoban_get_tile', 'number', ['number', 'number']);
             c_sokoban_is_game_won = Module.cwrap('sokoban_is_game_won', 'boolean', []);
-
+		
             initGame();
             window.addEventListener('keydown', handleKeyPress);
         };
@@ -68,11 +78,14 @@
             boardElement.innerHTML = '';
             const rows = c_sokoban_get_rows();
             const cols = c_sokoban_get_cols();
-
+			
+			// Set the CSS custom property for the grid columns
+			boardElement.style.setProperty('--cols', cols);
+	
             for (let i = 0; i < rows; i++) {
                 for (let j = 0; j < cols; j++) {
                     const tileChar = String.fromCharCode(c_sokoban_get_tile(i, j));
-                    const tileDiv = document.createElement('span');
+                    const tileDiv = document.createElement('div');
                     tileDiv.classList.add('tile');
                     tileDiv.textContent = tileChar;
 
@@ -80,14 +93,16 @@
                         case '#': tileDiv.classList.add('wall'); break;
                         case '@': tileDiv.classList.add('player'); break;
                         case '+': tileDiv.classList.add('player-on-goal'); break;
+                        case '&': tileDiv.classList.add('player-on-ice'); break;
                         case '$': tileDiv.classList.add('box'); break;
                         case '*': tileDiv.classList.add('box-on-goal'); break;
+                        case '"': tileDiv.classList.add('box-on-ice'); break;
                         case '.': tileDiv.classList.add('goal'); break;
                         case ' ': tileDiv.classList.add('floor'); break;
+                        case '~': tileDiv.classList.add('ice'); break;
                     }
                     boardElement.appendChild(tileDiv);
                 }
-                boardElement.appendChild(document.createElement('br'));
             }
             if (c_sokoban_is_game_won()) {
                 statusElement.textContent = "Congratulations! You won!";
@@ -95,8 +110,20 @@
                 statusElement.textContent = "";
             }
         }
+		
+		function handleEventProgression() {
+		  if (c_sokoban_process_event()) {
+		    drawBoard();
+		  }
+		  if (c_sokoban_is_event_ongoing()) {
+		    setTimeout(handleEventProgression, eventTicTime);
+		  }
+		}
 
         function handleKeyPress(event) {
+			if (c_sokoban_is_event_ongoing()) {
+				return; // ignore input while an event is ongoing
+			}
             let inputChar = '';
             switch (event.key) {
                 case 'ArrowUp':
@@ -124,8 +151,13 @@
                 default:
                     return;
             }
-            c_sokoban_handle_input(inputChar.charCodeAt(0));
-            drawBoard();
+            if (c_sokoban_handle_input(inputChar.charCodeAt(0))) {
+              drawBoard();
+			}
+			// if the action triggers an event, set in motion the timers to process it
+			if (c_sokoban_is_event_ongoing()) {
+			  setTimeout(handleEventProgression, eventTicTime);
+			}
         }
     </script>
 </body>

@@ -1648,6 +1648,8 @@ function checkIncomingModuleAPI() {
 // Imports from the Wasm binary.
 var _sokoban_init_web = Module['_sokoban_init_web'] = makeInvalidEarlyAccess('_sokoban_init_web');
 var _sokoban_handle_input = Module['_sokoban_handle_input'] = makeInvalidEarlyAccess('_sokoban_handle_input');
+var _sokoban_is_event_ongoing = Module['_sokoban_is_event_ongoing'] = makeInvalidEarlyAccess('_sokoban_is_event_ongoing');
+var _sokoban_process_event = Module['_sokoban_process_event'] = makeInvalidEarlyAccess('_sokoban_process_event');
 var _sokoban_get_rows = Module['_sokoban_get_rows'] = makeInvalidEarlyAccess('_sokoban_get_rows');
 var _sokoban_get_cols = Module['_sokoban_get_cols'] = makeInvalidEarlyAccess('_sokoban_get_cols');
 var _sokoban_get_tile = Module['_sokoban_get_tile'] = makeInvalidEarlyAccess('_sokoban_get_tile');
@@ -1665,6 +1667,8 @@ var _emscripten_stack_get_current = makeInvalidEarlyAccess('_emscripten_stack_ge
 function assignWasmExports(wasmExports) {
   Module['_sokoban_init_web'] = _sokoban_init_web = createExportWrapper('sokoban_init_web', 1);
   Module['_sokoban_handle_input'] = _sokoban_handle_input = createExportWrapper('sokoban_handle_input', 1);
+  Module['_sokoban_is_event_ongoing'] = _sokoban_is_event_ongoing = createExportWrapper('sokoban_is_event_ongoing', 0);
+  Module['_sokoban_process_event'] = _sokoban_process_event = createExportWrapper('sokoban_process_event', 0);
   Module['_sokoban_get_rows'] = _sokoban_get_rows = createExportWrapper('sokoban_get_rows', 0);
   Module['_sokoban_get_cols'] = _sokoban_get_cols = createExportWrapper('sokoban_get_cols', 0);
   Module['_sokoban_get_tile'] = _sokoban_get_tile = createExportWrapper('sokoban_get_tile', 2);

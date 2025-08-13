@@ -1,7 +1,4 @@
 #include "sokoban.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdbool.h>
 
 #ifdef _WIN32
 #include <conio.h>
@@ -10,7 +7,14 @@
 #include <termios.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <time.h>
+
+int nanosleep(const struct timespec *req, struct timespec *rem);
 #endif
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
 
 // ANSI color codes
 #define COLOR_RESET   "\033[0m"
@@ -19,9 +23,15 @@
 #define COLOR_BOX     "\033[93m"     // Bright yellow foreground
 #define COLOR_GOAL    "\033[43m"     // Dark yellow background
 #define COLOR_PLAYER_ON_GOAL "\033[43;96m" // Dark yellow background, bright cyan foreground
-#define COLOR_BOX_ON_GOAL "\033[43;93m" // Dark yellow background, yellow foreground
+#define COLOR_BOX_ON_GOAL "\033[43;93m"    // Dark yellow background, yellow foreground
+#define COLOR_ICE "\033[46;97m"            // Dark cyan background, dark white foreground
+#define COLOR_PLAYER_ON_ICE "\033[46;96m"  // Dark cyan background, bright cyan foreground
+#define COLOR_BOX_ON_ICE "\033[46;93m"     // Dark cyan background, bright yellow foreground
 
-void clear_screen() {
+// milliseconds to wait before running a "tic" during game events
+#define TIC_DURATION_MS 100
+
+void clear_screen(void) {
 #ifdef _WIN32
     HANDLE hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
     CONSOLE_SCREEN_BUFFER_INFO csbi;
@@ -36,8 +46,18 @@ void clear_screen() {
 #endif
 }
 
+void delay(int milliseconds) {
+#ifdef _WIN32
+    Sleep(milliseconds);
+#else
+    nanosleep(&(struct timespec) { .tv_sec = milliseconds / 1000,
+                                   .tv_nsec = (milliseconds % 1000) * 1000000
+                                 }, NULL);
+#endif
+}
+
 void print_board(GameState *state) {
-    clear_screen();
+    //clear_screen();
     for (int i = 0; i < state->rows; i++) {
         for (int j = 0; j < state->cols; j++) {
             switch (state->board[i][j]) {
@@ -59,6 +79,15 @@ void print_board(GameState *state) {
                 case BOX_ON_GOAL:
                     printf("%s%c%s", COLOR_BOX_ON_GOAL, BOX_ON_GOAL, COLOR_RESET);
                     break;
+				case ICE:
+					printf("%s%c%s", COLOR_ICE, ICE, COLOR_RESET);
+					break;
+				case PLAYER_ON_ICE:
+					printf("%s%c%s", COLOR_PLAYER_ON_ICE, PLAYER_ON_ICE, COLOR_RESET);
+					break;
+				case BOX_ON_ICE:
+					printf("%s%c%s", COLOR_BOX_ON_ICE, BOX_ON_ICE, COLOR_RESET);
+					break;
                 default:
                     printf("%c", state->board[i][j]);
                     break;
@@ -68,15 +97,13 @@ void print_board(GameState *state) {
     }
 }
 
+int getch_noblock(void) {
 #ifdef _WIN32
-int getch_noblock() {
     if (_kbhit()) {
         return _getch();
     }
     return -1;
-}
 #else
-int getch_noblock() {
     struct termios oldt, newt;
     int ch;
     int oldf;
@@ -90,10 +117,10 @@ int getch_noblock() {
     tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
     fcntl(STDIN_FILENO, F_SETFL, oldf);
     return ch;
-}
 #endif
+}
 
-void enable_raw_mode() {
+void enable_raw_mode(void) {
 #ifndef _WIN32
     struct termios raw;
     tcgetattr(STDIN_FILENO, &raw);
@@ -102,7 +129,7 @@ void enable_raw_mode() {
 #endif
 }
 
-void disable_raw_mode() {
+void disable_raw_mode(void) {
 #ifndef _WIN32
     struct termios raw;
     tcgetattr(STDIN_FILENO, &raw);
@@ -118,7 +145,14 @@ int main(int argc, char *argv[]) {
     }
     GameState state;
     init_move_history(&state.history);
-    load_level(&state, argv[1]);
+	
+    FILE *file = fopen(argv[1], "r");
+    if (!file) {
+        perror("Error opening file");
+        exit(EXIT_FAILURE);
+    }
+    load_level(&state, file);
+    fclose(file);
 
 #ifdef _WIN32
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -169,7 +203,14 @@ int main(int argc, char *argv[]) {
                 updated = move_player(&state, 0, 1);
                 break;
             case 'r':
-                reset_game(&state, argv[1]);
+				
+				FILE *file = fopen(argv[1], "r");
+				if (!file) {
+					perror("Error opening file");
+					exit(EXIT_FAILURE);
+				}
+                reset_game(&state, file);
+                fclose(file);
                 updated = true;
                 break;
             case 'u':
@@ -181,13 +222,23 @@ int main(int argc, char *argv[]) {
         }
         if (updated) {
             print_board(&state);
-            if (is_game_won(&state)) {
-                printf("Congratulations! You won!\n");
-                printf("Total steps taken: %zu\n", state.history.size);
-                printf("Move history: %.*s\n", (int)state.history.size, state.history.moves);
-                break;
-            }
-        }
+		}
+			
+		// If there's an ongoing event, process it and redraw each gametic accordingly until resolved
+		while (state.event.type != EVENT_NONE) {
+			//printf("event! %dx%d (%d,%d)\n", state.event.x, state.event.y, state.event.dr, state.event.dc);
+			delay(TIC_DURATION_MS);
+			if (process_event(&state)) {
+			  print_board(&state);
+			}
+		}
+		
+		if (is_game_won(&state)) {
+			printf("Congratulations! You won!\n");
+			printf("Total steps taken: %zu\n", state.history.size);
+			printf("Move history: %.*s\n", (int)state.history.size, state.history.moves);
+			break;
+		}
     }
 
 #ifndef _WIN32

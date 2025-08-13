@@ -4,25 +4,34 @@
 #include <string.h>
 #include <ctype.h>
 
+/* How many history items would be allocated each time */
+#define HISTORY_ALLOCATION_INCREMENT 16
+
+
+
 #define IS_WALL(x,y) \
   (x < 0 || x >= state->rows || y < 0 || y >= state->cols || state->board[x][y] == WALL)
 #define IS_BOX(x,y) \
-  ((state->board[x][y] == BOX) || (state->board[x][y] == BOX_ON_GOAL))
+  ((state->board[x][y] == BOX) || (state->board[x][y] == BOX_ON_GOAL) || (state->board[x][y] == BOX_ON_ICE))
 #define IS_PLAYER(x,y) \
-  ((state->board[x][y] == PLAYER) || (state->board[x][y] == PLAYER_ON_GOAL))
-#define REMOVE_BOX(x,y) \
-  state->board[x][y] = ((state->board[x][y] == BOX_ON_GOAL)? GOAL : FLOOR)
-#define REMOVE_PLAYER(x,y) \
-  state->board[x][y] = ((state->board[x][y] == PLAYER_ON_GOAL)? GOAL : FLOOR)
-#define ADD_BOX(x,y) \
-  state->board[x][y] = ((state->board[x][y] == GOAL)? BOX_ON_GOAL : BOX)
-#define ADD_PLAYER(x,y) \
-  state->board[x][y] = ((state->board[x][y] == GOAL)? PLAYER_ON_GOAL : PLAYER)
+  ((state->board[x][y] == PLAYER) || (state->board[x][y] == PLAYER_ON_GOAL) || (state->board[x][y] == PLAYER_ON_ICE))
+#define IS_ICE(x, y) \
+  ((state->board[x][y] == ICE) || (state->board[x][y] == PLAYER_ON_ICE) || (state->board[x][y] == BOX_ON_ICE))
+
+#define REMOVE_BOX(x, y) \
+  state->board[x][y] = ((state->board[x][y] == BOX_ON_GOAL) ? GOAL : ((state->board[x][y] == BOX_ON_ICE) ? ICE : FLOOR))
+#define REMOVE_PLAYER(x, y) \
+  state->board[x][y] = ((state->board[x][y] == PLAYER_ON_GOAL) ? GOAL : ((state->board[x][y] == PLAYER_ON_ICE) ? ICE : FLOOR))
+  
+#define ADD_BOX(x, y) \
+  state->board[x][y] = ((state->board[x][y] == GOAL) ? BOX_ON_GOAL : ((state->board[x][y] == ICE) ? BOX_ON_ICE : BOX))
+#define ADD_PLAYER(x, y) \
+  state->board[x][y] = ((state->board[x][y] == GOAL) ? PLAYER_ON_GOAL : ((state->board[x][y] == ICE) ? PLAYER_ON_ICE : PLAYER))
+
 
 static void add_move(MoveHistory *history, char move) {
-    if (history->size >= history->capacity) {
-        history->capacity *= 2;
-        history->moves = (char *)realloc(history->moves, history->capacity * sizeof(char));
+    if ((history->size + 1) % HISTORY_ALLOCATION_INCREMENT == 0) {
+        history->moves = (char *)realloc(history->moves, (history->size + HISTORY_ALLOCATION_INCREMENT) * sizeof(char));
     }
     history->moves[history->size++] = move;
 }
@@ -34,20 +43,19 @@ static void pop_move(MoveHistory *history) {
 }
 
 void init_move_history(MoveHistory *history) {
-    history->capacity = 10;
     history->size = 0;
-    history->moves = (char *)malloc(history->capacity * sizeof(char));
+    history->moves = (char *)malloc(HISTORY_ALLOCATION_INCREMENT * sizeof(char));
 }
 
 void clear_move_history(MoveHistory *history) {
-    free(history->moves);
-    history->moves = NULL;
+	if(history->moves != NULL) {
+        free(history->moves);
+        history->moves = NULL;
+	}
     history->size = 0;
-    history->capacity = 0;
 }
 
-void load_level(GameState *state, const char *filename) {
-    FILE *file = fopen(filename, "r");
+void load_level(GameState *state, FILE *file) {
     if (!file) {
         // This is a terminal-specific error, but for the sake of the example,
         // we keep a simple fopen. In a web version, the file would be loaded
@@ -55,6 +63,7 @@ void load_level(GameState *state, const char *filename) {
         perror("Error opening file");
         exit(EXIT_FAILURE);
     }
+	state->event.type = EVENT_NONE;
     state->rows = 0;
     state->cols = 0;
     char line[MAX_COLS + 2];
@@ -64,13 +73,16 @@ void load_level(GameState *state, const char *filename) {
             switch(line[j]) {
               case PLAYER:
               case PLAYER_ON_GOAL:
+              case PLAYER_ON_ICE:
                 state->player_row = state->rows;
                 state->player_col = j;
 				/* FALLTHROUGH -- avoid compiler warnings */
               case WALL:
               case GOAL:
+			  case ICE:
               case BOX:
               case BOX_ON_GOAL:
+			  case BOX_ON_ICE:
                 state->board[state->rows][j] = line[j];
                 break;
               default:
@@ -84,13 +96,12 @@ void load_level(GameState *state, const char *filename) {
         }
         state->rows++;
     }
-    fclose(file);
 }
 
-void reset_game(GameState *state, const char *filename) {
+void reset_game(GameState *state, FILE *file) {
     clear_move_history(&state->history);
     init_move_history(&state->history);
-    load_level(state, filename);
+    load_level(state, file);
 }
 
 bool is_game_won(GameState *state) {
@@ -102,6 +113,50 @@ bool is_game_won(GameState *state) {
         }
     }
     return true;
+}
+
+bool move_on_ice(GameState *state) {
+	bool redraw = false;
+	
+	int new_x = state->event.x + state->event.dr;
+	int new_y = state->event.y + state->event.dc;
+
+    if (IS_BOX(new_x, new_y)) {
+		// hit a box! event transfers to the box for next tic
+		// (it may chain if there's a stack of boxes!)
+		state->event.x = new_x;
+		state->event.y = new_y;
+		new_x = state->event.x + state->event.dr;
+	    new_y = state->event.y + state->event.dc;
+		
+    } else if (IS_WALL(new_x, new_y)) {
+		// hit a wall! stop
+		state->event.type = EVENT_NONE;
+	} else {
+		// Move the player or the box
+		if (IS_PLAYER(state->event.x, state->event.y)) {
+			REMOVE_PLAYER(state->event.x, state->event.y);
+			ADD_PLAYER(new_x, new_y);
+			
+			state->player_row = new_x;
+			state->player_col = new_y;			
+		}
+		else if (IS_BOX(state->event.x, state->event.y)) {
+			REMOVE_BOX(state->event.x, state->event.y);
+			ADD_BOX(new_x, new_y);
+		}
+		redraw = true;
+
+		if (!IS_ICE(new_x, new_y)) {
+			// no longer slippery
+			state->event.type = EVENT_NONE;
+		} else {
+			// update position for next event
+			state->event.x = new_x;
+			state->event.y = new_y;
+		}
+	}
+	return redraw;
 }
 
 bool move_player(GameState *state, int dr, int dc) {
@@ -119,14 +174,32 @@ bool move_player(GameState *state, int dr, int dc) {
         if (IS_WALL(box_row, box_col) || IS_BOX(box_row, box_col)) {
             return false;
         }
+        REMOVE_BOX(new_row, new_col);
         ADD_BOX(box_row, box_col);
         box_pushed = true;
+		if(state->board[box_row][box_col] == BOX_ON_ICE) {
+			state->event.type = EVENT_ICE_MOVE;
+			state->event.x = box_row;
+			state->event.y = box_col;
+			state->event.dr = dr;
+			state->event.dc = dc;
+			move_on_ice(state);
+		}
     }
 
     REMOVE_PLAYER(state->player_row, state->player_col);
     ADD_PLAYER(new_row, new_col);
     state->player_row = new_row;
     state->player_col = new_col;
+	
+	if(state->board[new_row][new_col] == PLAYER_ON_ICE) {
+		state->event.type = EVENT_ICE_MOVE;
+		state->event.x = new_row;
+		state->event.y = new_col;
+		state->event.dr = dr;
+		state->event.dc = dc;
+        move_on_ice(state);
+	}
 
     if (box_pushed) {
         if (dr == -1) add_move(&state->history, 'U');
@@ -181,9 +254,26 @@ void undo_move(GameState *state) {
     state->player_col = new_col;
 }
 
+/* Advance a game tic forwards */
+bool process_event(GameState *state) {
+	
+	bool redraw = false;
+	switch(state->event.type) {
+	  case EVENT_ICE_MOVE:
+	    redraw = move_on_ice(state);
+	    break;
+	  case EVENT_NONE:
+	    break;
+	  default:
+	    perror("Unknown event type");
+	    state->event.type = EVENT_NONE;
+	}
+    return redraw;
+}
+
 char get_tile(GameState *state, int row, int col) {
     if (row >= 0 && row < state->rows && col >= 0 && col < state->cols) {
         return state->board[row][col];
     }
-    return ' ';
+    return '\0';
 }

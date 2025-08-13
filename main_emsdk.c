@@ -1,32 +1,28 @@
 #include "sokoban.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <emscripten/emscripten.h>
 
 // Global game state object
 GameState game_state;
-const char* current_level_data;
 
-// Exported functions for JavaScript to call
-EMSCRIPTEN_KEEPALIVE
-void sokoban_init_web(const char* level_data) {
-    current_level_data = level_data;
-    init_move_history(&game_state.history);
-    // In a real application, you would parse the level data string
-    // instead of reading a file. We'll simulate this with a simple
-    // string copy.
-    // For this example, we assume `level_data` points to a static
-    // string or one that persists.
+// Store current level initial state
+char current_level_data[MAX_ROWS * MAX_COLS + MAX_ROWS];
+
+
+void load_level_from_string(const char *level_string) {
     game_state.rows = 0;
     game_state.cols = 0;
     int row = 0, col = 0;
-    for (const char* p = level_data; *p != '\0'; p++) {
+    for (const char* p = level_string; *p != '\0'; p++) {
         if (*p == '\n') {
             game_state.rows++;
             if (col > game_state.cols) {
                 game_state.cols = col;
             }
             col = 0;
+            row++;
             if (game_state.rows >= MAX_ROWS) break;
             continue;
         }
@@ -37,10 +33,32 @@ void sokoban_init_web(const char* level_data) {
         game_state.board[row][col] = *p;
         col++;
     }
+    // Final check for the last row if there's no trailing newline
+    if (col > game_state.cols) {
+        game_state.cols = col;
+    }
+    game_state.rows++;
+	printf("%dx%d level initialized!\n%s\n", game_state.rows, game_state.cols, level_string);
+}
+
+void sokoban_reset_web(void) {
+    clear_move_history(&game_state.history);
+    init_move_history(&game_state.history);
+    load_level_from_string(current_level_data);
+}
+
+
+// Exported functions for JavaScript to call
+EMSCRIPTEN_KEEPALIVE
+void sokoban_init_web(const char* level_data) {
+	// Copy the level data into a persistent buffer so we can restart the level
+    strcpy(current_level_data, level_data);
+    init_move_history(&game_state.history);
+	load_level_from_string(current_level_data);
 }
 
 EMSCRIPTEN_KEEPALIVE
-void sokoban_handle_input(char input) {
+bool sokoban_handle_input(char input) {
     int dr = 0, dc = 0;
     bool updated = false;
 
@@ -67,7 +85,7 @@ void sokoban_handle_input(char input) {
             break;
         case 'r':
             // For the web version, a "reset" means re-initializing from the stored level data
-            sokoban_init_web(current_level_data);
+            sokoban_reset_web();
             updated = true;
             break;
     }
@@ -75,6 +93,17 @@ void sokoban_handle_input(char input) {
     if (!updated && (dr != 0 || dc != 0)) {
         updated = move_player(&game_state, dr, dc);
     }
+	return updated;
+}
+
+EMSCRIPTEN_KEEPALIVE
+bool sokoban_is_event_ongoing(void) {
+	return (game_state.event.type != EVENT_NONE);
+}
+
+EMSCRIPTEN_KEEPALIVE
+bool sokoban_process_event(void) {
+	return process_event(&game_state);
 }
 
 EMSCRIPTEN_KEEPALIVE
