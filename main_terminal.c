@@ -116,6 +116,25 @@ int getch_noblock(void) {
     ch = getchar();
     tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
     fcntl(STDIN_FILENO, F_SETFL, oldf);
+
+    // Handle arrow keys (ESC [ A, ESC [ B, etc.)
+    if (ch == 27) { // ESC
+        // Peek at the next two characters
+        int next1 = getchar();
+        int next2 = getchar();
+        if (next1 == 91) { // [
+            switch (next2) {
+                case 65: // Up
+                    return 'w';
+                case 66: // Down
+                    return 's';
+                case 67: // Right
+                    return 'd';
+                case 68: // Left
+                    return 'a';
+            }
+        }
+    }
     return ch;
 #endif
 }
