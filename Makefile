@@ -15,7 +15,7 @@ TERMINAL_OBJS = $(TERMINAL_SRCS:.c=.o)
 TERMINAL_EXE = sokterm
 WEB_JS = web/sokoban.js
 
-.PHONY: all terminal web serve clean
+.PHONY: all terminal web serve format clean
 
 all: terminal web
 
@@ -39,6 +39,9 @@ serve: web
 	@echo "Starting web server at http://localhost:8000"
 	@python3 -m http.server --directory web/
 
+format:
+	clang-format --style=file -i *.c *.h
+	perl -0pi -e 's/[ \t]+(\n)/$$1/g' web/*.js
+
 clean:
 	rm -f $(TERMINAL_EXE) $(TERMINAL_OBJS) $(WEB_JS) web/sokoban.wasm
-
