@@ -1,0 +1,207 @@
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::         Sokoban (c) by Falcon Co., Ltd., Japan         ::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::                    File Format 0.20                    ::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::                                                        ::
+:: File Notes                                  Optional   ::
+:: Puzzle 1                                    Required   ::
+::    Title                                    Optional*  ::
+::    Board                                    See legend ::
+::    Puzzle Notes                             Optional   ::
+::    Saved Game or Solution 1                 Optional   ::
+::      Title                                  Optional*  ::
+::      Moves                                  See legend ::
+::      Notes                                  Optional   ::
+::    Saved Game or Solution 2                 Optional   ::
+::    ... (more saved games and solutions)                ::
+:: Puzzle 2                                    Optional   ::
+:: ... (more puzzles)                                     ::
+::                                                        ::
+:: Remarks:                                               ::
+::                                                        ::
+:: File Notes                                             ::
+::   File notes consist of unstructured text and          ::
+::   key/value properties, such as "Author: Name".        ::
+::                                                        ::
+::   Lines beginning with "::" are comments intended only ::
+::   for someone examining the file in a text editor and  ::
+::   should not be displayed by the Sokoban program.      ::
+::                                                        ::
+::   The optional but recommended property                ::
+::   "Collection: Name" assigns a name to the puzzle      ::
+::   collection. This helps to preserve the collection’s  ::
+::   name when copied from a source, such as the          ::
+::   internet, and pasted into a Sokoban program.         ::
+::                                                        ::
+:: Titles                                                 ::
+::   A title line is the last non-blank text line before  ::
+::   a board, saved game, or solution, provided the line  ::
+::   is either preceded by a blank line or is the only    ::
+::   text line in that position in the file.              ::
+::                                                        ::
+::   Title lines are optional unless a single or last     ::
+::   text line from a preceding puzzle, saved game,       ::
+::   solution, or file notes can be mistaken for a title  ::
+::   line.                                                ::
+::                                                        ::
+:: Puzzle Notes                                           ::
+::   Two special key/value pairs are supported in puzzle  ::
+::   notes: "Title" and "Author", hence, titles can be    ::
+::   specified either in a title line or as a key/value   ::
+::   pair.                                                ::
+::                                                        ::
+::::::::::::::::::::::::::: Board ::::::::::::::::::::::::::
+:: Legend.................:      :.................Legend ::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+:: Wall...................: #  # :...................Wall ::
+:: Pusher.................: p  @ :.................Pusher ::
+:: Pusher on goal square..: P  + :..Pusher on goal square ::
+:: Box....................: b  $ :....................Box ::
+:: Box on goal square.....: B  * :.....Box on goal square ::
+:: Goal square............: .  . :............Goal square ::
+:: Floor..................:      :..................Floor ::
+:: Floor..................: -    :..................Floor ::
+:: Floor..................: _    :..................Floor ::
+::                                                        ::
+:: Remarks:                                               ::
+::                                                        ::
+::   The first and last non-empty square in each row must ::
+::   be a wall or a box on a goal. An empty interior row  ::
+::   must be written with at least one "-" or "_".        ::
+::                                                        ::
+::::::::::::::::::::::::::: Moves ::::::::::::::::::::::::::
+:: Legend.................:      :.................Legend ::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+:: Move pusher up.........: u  U :.......Push/pull box up ::
+:: Move pusher down.......: d  D :.....Push/pull box down ::
+:: Move pusher left.......: l  L :.....Push/pull box left ::
+:: Move pusher right......: r  R :....Push/pull box right ::
+:: Begin jump.............: [  ] :...............End jump ::
+:: Begin pusher change....: {  } :......End pusher change ::
+:: Current position.......: *  * :.......Current position ::
+::                                                        ::
+:: Remarks:                                               ::
+::                                                        ::
+::   Jumps and pulls appear only in reverse mode saved    ::
+::   games and solutions. Jumps are used to move the      ::
+::   pusher to the desired location before the reverse    ::
+::   mode game begins.                                    ::
+::                                                        ::
+::   Reverse mode saved games and solutions must start    ::
+::   with a jump, even if it is empty, e.g., "[]Urrd".    ::
+::                                                        ::
+::   Pusher changes apply only to puzzles with multiple   ::
+::   pushers, such as Multiban. Moves inside the braces   ::
+::   indicate the relative movement needed to switch from ::
+::   the currently active pusher to the next active       ::
+::   pusher. At the start of a game, a "{...}" sequence   ::
+::   activates the pusher relative to the top-left        ::
+::   pusher. For example: "{rddd}Urr{uul}uLU". If the     ::
+::   top-left pusher is the first active pusher, the      ::
+::   empty "{}" can be omitted.                           ::
+::                                                        ::
+::   The current position marker is optional and defaults ::
+::   to the position after the last move.                 ::
+::                                                        ::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+An example file:
+
+----------------------------------------------------------------------
+Collection: YASGen
+Author: YASGen & Brian Damgaard
+Copyright (c) 2003 by Brian Damgaard
+These levels may be freely distributed provided they are credited with
+the author's name.
+
+Chaos
+
+  #####
+###p .#
+# b #.#
+#  bb #
+#.  # #
+#   b.#
+#######
+
+Solution/Moves
+dDuurrddLLrrddLLUlluuRDRddrruuLLrruullDlldddRRuULrrruullDldRddlUruuurr
+ddddLLuuRlddrruUUdlldlldRRuuulDrddlluRurrrddLLUluRRlddrruUlldlldRRRllu
+uulD
+----------------------------------------------------------------------
+
+More level examples:
+
+Demo Level 01
+
+########
+#      #
+#@ $   #
+#   $  #
+# . .  #
+########
+
+This demo level is trivial, but it suffices to demonstrate
+the file-format.
+A Sokoban program can add key/value pairs within the notes,
+such as:
+Author: nn
+Website: http://www.nn.net
+
+Solution/Moves
+rurrdDuLulDD
+
+The title of a snapshot does not bear any special meaning.
+This snapshot just happens to be the best solution found
+(so far). The demo-program automatically saves best solutions.
+
+Snapshot 7/0
+urrrrdd
+
+This is an example of a snapshot saved by the user.
+Later he/she can continue work on this path.
+
+Snapshot 9/2
+urrrrddLL*ruulDD
+
+Another snapshot saved by the user. The '*' indicates
+current position, i.e., the last moves were taken back,
+but are still available for the "redo" function.
+
+
+Demo Level 02
+
+########
+#     .#
+#@ $   #
+#   $  #
+# . *  #
+########
+
+Just another trivial demo level. The number of levels in a
+file is limited by available memory only.
+
+Solution/Moves
+rRRRdrUdlLLulD
+
+Reverse Mode Snapshot 13/6
+[rrrd]UUrLLLdrD
+
+This is an example of a reverse mode snapshot.
+
+Reverse mode snapshots always have a leading jump-sequence,
+even if it is empty. An example: "[]Ulld...".
+
+
+Demo Level 03
+
+########
+#      #
+#  $   #
+#   $  #
+# + .  #
+########
+
+Solution/Moves
+rrruulLrDuullDD

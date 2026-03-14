@@ -19,6 +19,7 @@
 #define ADD_BOX(x, y) state->board[x][y] = ((state->board[x][y] == GOAL) ? BOX_ON_GOAL : ((state->board[x][y] == ICE) ? BOX_ON_ICE : BOX))
 #define ADD_PLAYER(x, y) state->board[x][y] = ((state->board[x][y] == GOAL) ? PLAYER_ON_GOAL : ((state->board[x][y] == ICE) ? PLAYER_ON_ICE : PLAYER))
 
+// Grows the move history buffer when a new move would exceed its capacity.
 static bool ensure_history_capacity(MoveHistory *history, size_t needed_size) {
   if (needed_size <= history->capacity) {
     return true;
@@ -39,10 +40,12 @@ static bool ensure_history_capacity(MoveHistory *history, size_t needed_size) {
   return true;
 }
 
+// Appends one encoded move to the history buffer.
 static void append_move(MoveHistory *history, char move) {
   history->moves[history->size++] = move;
 }
 
+// Encodes a move direction and push flag into the compact history format.
 static char encode_move(int dr, int dc, bool box_pushed) {
   if (dr == -1) return box_pushed ? 'U' : 'u';
   if (dr == 1) return box_pushed ? 'D' : 'd';
@@ -51,6 +54,7 @@ static char encode_move(int dr, int dc, bool box_pushed) {
   return '\0';
 }
 
+// Decodes one stored move back into a row and column delta.
 static bool decode_move(char move, int *dr, int *dc) {
   *dr = 0;
   *dc = 0;
@@ -73,6 +77,7 @@ static bool decode_move(char move, int *dr, int *dc) {
   }
 }
 
+// Restores the board, player, and event state to the saved initial snapshot.
 static void restore_initial_state(GameState *state) {
   memcpy(state->board, state->initial_state.board, sizeof(state->board));
   state->rows = state->initial_state.rows;
@@ -86,6 +91,7 @@ static void restore_initial_state(GameState *state) {
   state->event.dc = 0;
 }
 
+// Copies a parsed level into the active game state.
 static void apply_level_state(GameState *state, const LevelState *level) {
   memcpy(state->board, level->board, sizeof(state->board));
   state->rows = level->rows;
@@ -99,6 +105,7 @@ static void apply_level_state(GameState *state, const LevelState *level) {
   state->event.dc = 0;
 }
 
+// Replays the recorded history from the initial state up to the requested move count.
 static bool replay_history(GameState *state, size_t move_count) {
   restore_initial_state(state);
   state->history.size = 0;
@@ -121,6 +128,7 @@ static bool replay_history(GameState *state, size_t move_count) {
   return true;
 }
 
+// Initializes move history storage for a new game state.
 void init_move_history(MoveHistory *history) {
   history->size = 0;
   history->capacity = HISTORY_ALLOCATION_INCREMENT;
@@ -130,6 +138,7 @@ void init_move_history(MoveHistory *history) {
   }
 }
 
+// Releases any memory owned by the move history.
 void clear_move_history(MoveHistory *history) {
   if (history->moves != NULL) {
     free(history->moves);
@@ -139,6 +148,7 @@ void clear_move_history(MoveHistory *history) {
   history->capacity = 0;
 }
 
+// Saves the current board as the reset point for the active level.
 void remember_initial_state(GameState *state) {
   memcpy(state->initial_state.board, state->board, sizeof(state->board));
   state->initial_state.rows = state->rows;
@@ -147,10 +157,12 @@ void remember_initial_state(GameState *state) {
   state->initial_state.player_col = state->player_col;
 }
 
+// Loads the first playable level from an open file.
 bool load_level(GameState *state, FILE *file) {
   return load_level_at_index(state, file, 0);
 }
 
+// Loads a specific level from an open file into the active game state.
 bool load_level_at_index(GameState *state, FILE *file, size_t level_index) {
   LevelState level;
 
@@ -165,10 +177,12 @@ bool load_level_at_index(GameState *state, FILE *file, size_t level_index) {
   return true;
 }
 
+// Loads the first playable level from an in-memory text buffer.
 bool load_level_from_string(GameState *state, const char *level_data) {
   return load_level_from_string_at_index(state, level_data, 0);
 }
 
+// Loads a specific level from an in-memory text buffer.
 bool load_level_from_string_at_index(GameState *state, const char *level_data, size_t level_index) {
   LevelState level;
 
@@ -183,11 +197,13 @@ bool load_level_from_string_at_index(GameState *state, const char *level_data, s
   return true;
 }
 
+// Resets the active game back to its remembered initial state.
 void reset_game(GameState *state) {
   restore_initial_state(state);
   state->history.size = 0;
 }
 
+// Checks whether every goal on the board has been satisfied.
 bool is_game_won(GameState *state) {
   for (int i = 0; i < state->rows; i++) {
     for (int j = 0; j < state->cols; j++) {
@@ -199,6 +215,7 @@ bool is_game_won(GameState *state) {
   return true;
 }
 
+// Advances the current sliding event for a player or box on ice.
 bool move_on_ice(GameState *state) {
   bool redraw = false;
 
@@ -241,6 +258,7 @@ bool move_on_ice(GameState *state) {
   return redraw;
 }
 
+// Attempts to move the player and starts any resulting ice event.
 bool move_player(GameState *state, int dr, int dc) {
   int new_row = state->player_row + dr;
   int new_col = state->player_col + dc;
@@ -301,6 +319,7 @@ bool move_player(GameState *state, int dr, int dc) {
   return true;
 }
 
+// Rewinds the board by replaying history up to the previous move.
 void undo_move(GameState *state) {
   if (state->history.size == 0) {
     return;
@@ -311,7 +330,7 @@ void undo_move(GameState *state) {
   }
 }
 
-/* Advance a game tic forwards */
+// Advances the active board event by one game tick.
 bool process_event(GameState *state) {
 
   bool redraw = false;
@@ -328,6 +347,7 @@ bool process_event(GameState *state) {
   return redraw;
 }
 
+// Returns the tile at the requested board position, or '\0' if out of bounds.
 char get_tile(GameState *state, int row, int col) {
   if (row >= 0 && row < state->rows && col >= 0 && col < state->cols) {
     return state->board[row][col];

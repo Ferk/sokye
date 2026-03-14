@@ -49,12 +49,14 @@ typedef struct {
   int drawn_rows;
 } BoardRenderState;
 
+// Initializes an empty list of selected level indexes.
 static void init_level_sequence(LevelSequence *sequence) {
   sequence->levels = NULL;
   sequence->count = 0;
   sequence->capacity = 0;
 }
 
+// Releases memory owned by a level selection list.
 static void clear_level_sequence(LevelSequence *sequence) {
   free(sequence->levels);
   sequence->levels = NULL;
@@ -62,6 +64,7 @@ static void clear_level_sequence(LevelSequence *sequence) {
   sequence->capacity = 0;
 }
 
+// Appends one zero-based level index to the selection list.
 static bool append_level(LevelSequence *sequence, size_t level_index) {
   size_t new_capacity = 0;
   size_t *new_levels = NULL;
@@ -83,12 +86,14 @@ static bool append_level(LevelSequence *sequence, size_t level_index) {
   return true;
 }
 
+// Advances past whitespace in a level selection string.
 static void skip_level_spec_spaces(const char **cursor) {
   while (**cursor != '\0' && isspace((unsigned char)**cursor)) {
     (*cursor)++;
   }
 }
 
+// Parses one 1-based level number from a level selection string.
 static bool parse_level_number(const char **cursor, size_t *out_number, char *error, size_t error_size) {
   char *end = NULL;
   unsigned long long value = 0;
@@ -114,6 +119,7 @@ static bool parse_level_number(const char **cursor, size_t *out_number, char *er
   return true;
 }
 
+// Expands an inclusive 1-based level range into the selection list.
 static bool append_level_range(LevelSequence *sequence, size_t first_level, size_t last_level) {
   for (size_t level = first_level; level <= last_level; level++) {
     if (!append_level(sequence, level - 1)) {
@@ -123,6 +129,7 @@ static bool append_level_range(LevelSequence *sequence, size_t first_level, size
   return true;
 }
 
+// Parses a --level selector such as "1,3-5,8-".
 static bool parse_level_spec(const char *spec, size_t total_levels, LevelSequence *sequence, char *error, size_t error_size) {
   const char *cursor = spec;
   bool expecting_token = true;
@@ -194,6 +201,7 @@ static bool parse_level_spec(const char *spec, size_t total_levels, LevelSequenc
   }
 }
 
+// Counts playable levels in a pack file and formats parse errors for the CLI.
 static bool count_levels_in_path(const char *level_path, size_t *out_total_levels, char *error, size_t error_size) {
   FILE *file = fopen(level_path, "r");
   bool counted = false;
@@ -217,6 +225,7 @@ static bool count_levels_in_path(const char *level_path, size_t *out_total_level
   return true;
 }
 
+// Builds the full ordered list of levels the terminal frontend should play.
 static bool build_level_sequence(const char *level_path, const arg_str_t *level_specs, LevelSequence *sequence, char *error, size_t error_size) {
   char detail[256];
   size_t total_levels = 0;
@@ -243,6 +252,7 @@ static bool build_level_sequence(const char *level_path, const arg_str_t *level_
   return true;
 }
 
+// Prints command-line usage information for the terminal frontend.
 static void print_help(const char *program_name) {
   printf("Sokoban terminal frontend\n\n");
   printf("Usage:\n");
@@ -270,40 +280,46 @@ static void print_help(const char *program_name) {
   printf("  q                         quit\n");
 }
 
+// Clears the remembered redraw state for the next board render.
 static void reset_board_render_state(BoardRenderState *render_state) {
   render_state->drawn_rows = 0;
 }
 
-static void print_metadata_with_title(const char *metadata, const char *title) {
-  const char *line = metadata;
-  size_t title_len = 0;
+// Prints pack metadata and level text shown before a board starts.
+static void print_level_info(const ParsedLevelInfo *info, size_t level_index) {
+  bool printed_anything = false;
 
-  if (metadata == NULL || metadata[0] == '\0') {
+  if (info == NULL) {
     return;
   }
 
-  if (title != NULL) {
-    title_len = strlen(title);
+  if (level_index == 0 && info->pack_metadata != NULL && info->pack_metadata[0] != '\0') {
+    printf("%s", info->pack_metadata);
+    printed_anything = true;
   }
 
-  while (line != NULL) {
-    const char *next = strchr(line, '\n');
-    size_t line_len = (next != NULL) ? (size_t)(next - line) : strlen(line);
-    bool is_title = (title != NULL && title_len > 0 && line_len == title_len && strncmp(line, title, line_len) == 0);
-
-    if (is_title) {
-      printf("%s%.*s%s\n", COLOR_TITLE, (int)line_len, line, COLOR_RESET);
-    } else {
-      printf("%.*s\n", (int)line_len, line);
+  if (info->title != NULL && info->title[0] != '\0') {
+    if (printed_anything) {
+      printf("\n\n");
     }
+    printf("%s%s%s", COLOR_TITLE, info->title, COLOR_RESET);
+    printed_anything = true;
+  }
 
-    if (next == NULL) {
-      break;
+  if (info->description != NULL && info->description[0] != '\0') {
+    if (printed_anything) {
+      printf("\n");
     }
-    line = next + 1;
+    printf("%s", info->description);
+    printed_anything = true;
+  }
+
+  if (printed_anything) {
+    printf("\n\n");
   }
 }
 
+// Clears the terminal screen on the current platform.
 void clear_screen(void) {
 #ifdef _WIN32
   HANDLE hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -319,6 +335,7 @@ void clear_screen(void) {
 #endif
 }
 
+// Sleeps for a short number of milliseconds.
 void delay(int milliseconds) {
 #ifdef _WIN32
   Sleep(milliseconds);
@@ -327,6 +344,7 @@ void delay(int milliseconds) {
 #endif
 }
 
+// Draws the current board, optionally reusing the previous screen region.
 void print_board(GameState *state, BoardRenderState *render_state) {
   bool redrawing = render_state->enabled && render_state->drawn_rows > 0;
 
@@ -379,6 +397,7 @@ void print_board(GameState *state, BoardRenderState *render_state) {
   render_state->drawn_rows = state->rows;
 }
 
+// Polls the keyboard for one input character without blocking.
 int getch_noblock(void) {
 #ifdef _WIN32
   if (_kbhit()) {
@@ -421,6 +440,7 @@ int getch_noblock(void) {
 #endif
 }
 
+// Enables raw terminal input on POSIX platforms.
 void enable_raw_mode(void) {
 #ifndef _WIN32
   struct termios raw;
@@ -430,6 +450,7 @@ void enable_raw_mode(void) {
 #endif
 }
 
+// Restores canonical terminal input on POSIX platforms.
 void disable_raw_mode(void) {
 #ifndef _WIN32
   struct termios raw;
@@ -439,10 +460,10 @@ void disable_raw_mode(void) {
 #endif
 }
 
+// Loads one selected level and its display metadata for terminal play.
 static bool load_terminal_level(GameState *state, const char *level_path, size_t level_index) {
   FILE *file = fopen(level_path, "r");
-  char *level_metadata = NULL;
-  char *level_title = NULL;
+  ParsedLevelInfo level_info = {0};
   bool loaded = false;
 
   if (!file) {
@@ -450,18 +471,13 @@ static bool load_terminal_level(GameState *state, const char *level_path, size_t
     return false;
   }
 
-  if (!parse_sok_level_title_from_file(file, level_index, &level_title)) {
+  if (!parse_sok_level_info_from_file(file, level_index, &level_info)) {
     fclose(file);
     return false;
   }
 
-  rewind(file);
-  if (parse_sok_level_metadata_from_file(file, level_index, &level_metadata) && level_metadata != NULL && level_metadata[0] != '\0') {
-    print_metadata_with_title(level_metadata, level_title);
-    printf("\n\n");
-  }
-  free(level_metadata);
-  free(level_title);
+  print_level_info(&level_info, level_index);
+  free_parsed_level_info(&level_info);
 
   rewind(file);
   loaded = load_level_at_index(state, file, level_index);
@@ -475,6 +491,7 @@ static bool load_terminal_level(GameState *state, const char *level_path, size_t
   return true;
 }
 
+// Runs the terminal Sokoban frontend.
 int main(int argc, char *argv[]) {
   arg_lit_t *help = arg_lit0("h", "help", "show this help and exit");
   arg_str_t *level_option = arg_strn("l", "level", "<spec>", 0, 64, "play only selected 1-based levels; accepts N, A-B, A-, comma lists, and repeated flags");
