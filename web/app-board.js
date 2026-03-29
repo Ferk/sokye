@@ -29,11 +29,17 @@
                 case '$':
                     tileElement.classList.add('overlay-box');
                     break;
+                case 'k':
+                    tileElement.classList.add('overlay-key');
+                    break;
                 case '*':
                     tileElement.classList.add('base-goal', 'overlay-box');
                     break;
                 case '"':
                     tileElement.classList.add('base-ice', 'overlay-box');
+                    break;
+                case 'K':
+                    tileElement.classList.add('base-lock');
                     break;
                 case '.':
                     tileElement.classList.add('base-goal');

@@ -32,6 +32,8 @@ int nanosleep(const struct timespec *req, struct timespec *rem);
 #define COLOR_ICE "\033[46;97m"            // Dark cyan background, dark white foreground
 #define COLOR_PLAYER_ON_ICE "\033[46;96m"  // Dark cyan background, bright cyan foreground
 #define COLOR_BOX_ON_ICE "\033[46;93m"     // Dark cyan background, bright yellow foreground
+#define COLOR_KEY "\033[33m"               // Dark yellow foreground
+#define COLOR_LOCK "\033[1;30;43m"         // Grey foreground, Dark yellow background
 #define COLOR_TITLE "\033[96m"             // Bright cyan foreground
 #define COLOR_STATUS "\033[93m"            // Bright yellow foreground
 
@@ -384,6 +386,12 @@ void print_board(GameState *state, BoardRenderState *render_state) {
           break;
         case BOX_ON_ICE:
           printf("%s%c%s", COLOR_BOX_ON_ICE, BOX_ON_ICE, COLOR_RESET);
+          break;
+        case KEY:
+          printf("%s%c%s", COLOR_KEY, KEY, COLOR_RESET);
+          break;
+        case LOCK:
+          printf("%s%c%s", COLOR_LOCK, LOCK, COLOR_RESET);
           break;
         default:
           printf("%c", state->board[i][j]);

@@ -19,6 +19,8 @@
 #define ICE '~'
 #define PLAYER_ON_ICE '&'
 #define BOX_ON_ICE '"'
+#define KEY 'k'
+#define LOCK 'K'
 
 typedef enum {
   EVENT_NONE = 0, // awaiting player input

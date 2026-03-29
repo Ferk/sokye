@@ -158,6 +158,8 @@ static bool is_board_char(char ch) {
     case ICE:
     case PLAYER_ON_ICE:
     case BOX_ON_ICE:
+    case KEY:
+    case LOCK:
     case 'p':
     case 'P':
     case 'b':
@@ -492,6 +494,8 @@ static bool append_level_line(LevelState *level, const char *line, size_t len) {
       case BOX:
       case BOX_ON_GOAL:
       case BOX_ON_ICE:
+      case KEY:
+      case LOCK:
         level->board[level->rows][i] = tile;
         break;
       default:

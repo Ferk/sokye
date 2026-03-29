@@ -9,8 +9,9 @@
 #define HISTORY_ALLOCATION_INCREMENT 16
 #define MAX_PATH_CELLS (MAX_ROWS * MAX_COLS)
 
-#define IS_WALL(x, y) (x < 0 || x >= state->rows || y < 0 || y >= state->cols || state->board[x][y] == WALL)
+#define IS_WALL(x, y) (x < 0 || x >= state->rows || y < 0 || y >= state->cols || state->board[x][y] == WALL || state->board[x][y] == LOCK)
 #define IS_BOX(x, y) ((state->board[x][y] == BOX) || (state->board[x][y] == BOX_ON_GOAL) || (state->board[x][y] == BOX_ON_ICE))
+#define IS_KEY(x, y) (state->board[x][y] == KEY)
 #define IS_PLAYER(x, y) ((state->board[x][y] == PLAYER) || (state->board[x][y] == PLAYER_ON_GOAL) || (state->board[x][y] == PLAYER_ON_ICE))
 #define IS_ICE(x, y) ((state->board[x][y] == ICE) || (state->board[x][y] == PLAYER_ON_ICE) || (state->board[x][y] == BOX_ON_ICE))
 
@@ -97,6 +98,48 @@ static bool decode_move(char move, int *dr, int *dc) {
   }
 }
 
+// Reports whether any keys are still present on the current board.
+static bool has_any_keys(GameState *state) {
+  for (int row = 0; row < state->rows; row++) {
+    for (int col = 0; col < state->cols; col++) {
+      if (state->board[row][col] == KEY) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Removes every remaining lock once the board no longer contains any keys.
+static void unlock_locks_if_needed(GameState *state) {
+  if (has_any_keys(state)) {
+    return;
+  }
+
+  for (int row = 0; row < state->rows; row++) {
+    for (int col = 0; col < state->cols; col++) {
+      if (state->board[row][col] == LOCK) {
+        state->board[row][col] = FLOOR;
+      }
+    }
+  }
+}
+
+// Moves the player to a new tile while preserving any floor-type underneath.
+static void move_player_to_tile(GameState *state, int new_row, int new_col) {
+  REMOVE_PLAYER(state->player_row, state->player_col);
+  ADD_PLAYER(new_row, new_col);
+  state->player_row = new_row;
+  state->player_col = new_col;
+}
+
+// Consumes a key tile and moves the player onto the cleared floor.
+static void consume_key_and_move_player(GameState *state, int key_row, int key_col) {
+  state->board[key_row][key_col] = FLOOR;
+  move_player_to_tile(state, key_row, key_col);
+  unlock_locks_if_needed(state);
+}
+
 // Restores the board, player, and event state to the saved initial snapshot.
 static void restore_initial_state(GameState *state) {
   memcpy(state->board, state->initial_state.board, sizeof(state->board));
@@ -109,6 +152,7 @@ static void restore_initial_state(GameState *state) {
   state->event.y = 0;
   state->event.dr = 0;
   state->event.dc = 0;
+  unlock_locks_if_needed(state);
 }
 
 // Copies a parsed level into the active game state.
@@ -123,6 +167,7 @@ static void apply_level_state(GameState *state, const LevelState *level) {
   state->event.y = 0;
   state->event.dr = 0;
   state->event.dc = 0;
+  unlock_locks_if_needed(state);
 }
 
 // Replays the recorded history from the initial state up to the requested move count.
@@ -383,14 +428,16 @@ bool move_on_ice(GameState *state) {
     state->event.y = new_y;
     new_x = state->event.x + state->event.dr;
     new_y = state->event.y + state->event.dc;
+  } else if (IS_KEY(new_x, new_y)) {
+    if (IS_PLAYER(state->event.x, state->event.y)) {
+      consume_key_and_move_player(state, new_x, new_y);
+      redraw = true;
+    }
+    state->event.type = EVENT_NONE;
   } else {
     // Move the player or the box
     if (IS_PLAYER(state->event.x, state->event.y)) {
-      REMOVE_PLAYER(state->event.x, state->event.y);
-      ADD_PLAYER(new_x, new_y);
-
-      state->player_row = new_x;
-      state->player_col = new_y;
+      move_player_to_tile(state, new_x, new_y);
     } else if (IS_BOX(state->event.x, state->event.y)) {
       REMOVE_BOX(state->event.x, state->event.y);
       ADD_BOX(new_x, new_y);
@@ -422,10 +469,24 @@ bool move_player(GameState *state, int dr, int dc) {
     return false;
   }
 
+  if (IS_KEY(new_row, new_col)) {
+    move = encode_move(dr, dc, false);
+    if (move == '\0') {
+      return false;
+    }
+    if (!ensure_history_capacity(&state->history, state->history.size + 1)) {
+      return false;
+    }
+
+    consume_key_and_move_player(state, new_row, new_col);
+    append_move(&state->history, move);
+    return true;
+  }
+
   if (IS_BOX(new_row, new_col)) {
     box_row = new_row + dr;
     box_col = new_col + dc;
-    if (IS_WALL(box_row, box_col) || IS_BOX(box_row, box_col)) {
+    if (IS_WALL(box_row, box_col) || IS_BOX(box_row, box_col) || IS_KEY(box_row, box_col)) {
       return false;
     }
     box_pushed = true;

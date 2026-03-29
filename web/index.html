@@ -241,6 +241,14 @@
             background-image: url("res/wall.png");
         }
 
+        .tile.base-lock {
+            background-color: transparent;
+        }
+
+        .tile.base-lock::before {
+            background-image: url("res/lock.png");
+        }
+
         .tile.base-goal::before {
             background-image: url("res/goal.png");
         }
@@ -255,6 +263,10 @@
 
         .tile.overlay-box::after {
             background-image: url("res/box.png");
+        }
+
+        .tile.overlay-key::after {
+            background-image: url("res/key.png");
         }
 
         #status {
@@ -778,6 +790,20 @@
                             <div class="legend-copy">
                                 <strong>Box</strong>
                                 <span>Push boxes around the map and onto goals.</span>
+                            </div>
+                        </div>
+                        <div class="help-legend-item">
+                            <span class="tile legend-tile overlay-key" aria-hidden="true"></span>
+                            <div class="legend-copy">
+                                <strong>Key</strong>
+                                <span>Acts like a box until you try to push it, then it disappears.</span>
+                            </div>
+                        </div>
+                        <div class="help-legend-item">
+                            <span class="tile legend-tile base-lock" aria-hidden="true"></span>
+                            <div class="legend-copy">
+                                <strong>Lock</strong>
+                                <span>Blocks movement like a wall until every key in the level is gone.</span>
                             </div>
                         </div>
                         <div class="help-legend-item">
