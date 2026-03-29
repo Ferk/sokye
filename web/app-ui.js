@@ -29,8 +29,17 @@
             state.currentPackMetadata = app.runtime.getPackMetadata();
         },
 
-        syncMoveCountFromRuntime() {
-            state.currentMoveCount = app.runtime.getMoveCount();
+        syncMoveHistoryFromRuntime() {
+            state.currentMoveHistory = app.runtime.getMoveHistory();
+            state.currentMoveCount = state.currentMoveHistory.length;
+        },
+
+        getElapsedTimeMs() {
+            if (state.firstMoveTimestamp === null) {
+                return state.elapsedTimeMs;
+            }
+
+            return state.elapsedTimeMs + (Date.now() - state.firstMoveTimestamp);
         },
 
         setStatus(message, tone = '') {
@@ -57,7 +66,7 @@
         },
 
         refreshLevelStats() {
-            if (state.firstMoveTimestamp === null) {
+            if (state.firstMoveTimestamp === null && state.currentMoveHistory === '' && state.elapsedTimeMs === 0) {
                 elements.undoButton.hidden = true;
                 elements.levelStats.hidden = true;
                 elements.levelStats.textContent = '';
@@ -65,7 +74,7 @@
                 return;
             }
 
-            const elapsedTime = app.ui.formatElapsedTime(Date.now() - state.firstMoveTimestamp);
+            const elapsedTime = app.ui.formatElapsedTime(app.ui.getElapsedTimeMs());
             const moveLabel = app.ui.formatMoveCount(state.currentMoveCount);
 
             elements.undoButton.hidden = false;
@@ -158,11 +167,16 @@
         },
 
         showPackSelectionState(message = 'Choose a level pack from a URL or local file to begin.') {
+            app.ui.stopLevelTimer();
             state.packText = '';
             state.packLabel = 'Sokoban';
             state.packUrl = '';
             state.totalLevels = 1;
             state.currentLevelIndex = 0;
+            state.currentMoveHistory = '';
+            state.currentMoveCount = 0;
+            state.elapsedTimeMs = 0;
+            state.firstMoveTimestamp = null;
             state.loadingLevel = false;
             state.gameReady = false;
             state.currentPlayerTile = null;
@@ -172,6 +186,7 @@
             elements.source.textContent = '';
             app.ui.clearCurrentLevelInfo();
             app.ui.refreshLevelInfo();
+            app.ui.refreshLevelStats();
             app.ui.hidePackErrorCallout();
             app.ui.setStatus(message);
         },
@@ -261,11 +276,26 @@
             }, 0);
         },
 
-        stopLevelTimer() {
+        stopLevelTimer(preserveElapsed = false) {
+            if (preserveElapsed) {
+                state.elapsedTimeMs = app.ui.getElapsedTimeMs();
+                state.firstMoveTimestamp = null;
+            }
             if (state.levelTimerInterval !== null) {
                 window.clearInterval(state.levelTimerInterval);
                 state.levelTimerInterval = null;
             }
+        },
+
+        startLevelTimer(initialElapsedTimeMs = 0) {
+            app.ui.stopLevelTimer();
+            state.elapsedTimeMs = Math.max(0, initialElapsedTimeMs);
+            state.firstMoveTimestamp = Date.now();
+            app.ui.refreshLevelStats();
+            state.levelTimerInterval = window.setInterval(() => {
+                app.ui.refreshLevelStats();
+                app.core.saveResumeState();
+            }, 1000);
         },
 
         startLevelStatsIfNeeded() {
@@ -273,15 +303,13 @@
                 return;
             }
 
-            state.firstMoveTimestamp = Date.now();
-            app.ui.refreshLevelStats();
-            state.levelTimerInterval = window.setInterval(() => {
-                app.ui.refreshLevelStats();
-            }, 1000);
+            app.ui.startLevelTimer(0);
         },
 
         resetLevelStats() {
+            state.currentMoveHistory = '';
             state.currentMoveCount = 0;
+            state.elapsedTimeMs = 0;
             state.firstMoveTimestamp = null;
             state.awaitingAdvanceAfterWin = false;
             app.ui.clearQueuedAutoMoves();
@@ -297,14 +325,14 @@
 
         showSuccessDialog() {
             const hasNextLevel = state.currentLevelIndex + 1 < state.totalLevels;
-            const elapsedMs = state.firstMoveTimestamp === null ? 0 : Date.now() - state.firstMoveTimestamp;
+            const elapsedMs = app.ui.getElapsedTimeMs();
 
             state.successDialogTimer = null;
             state.awaitingAdvanceAfterWin = false;
             app.ui.clearQueuedAutoMoves();
             app.ui.clearSuccessPromptTimer();
-            app.ui.stopLevelTimer();
-            if (state.firstMoveTimestamp !== null) {
+            app.ui.stopLevelTimer(true);
+            if (state.currentMoveHistory !== '') {
                 elements.levelStats.hidden = false;
                 elements.levelStats.textContent = `${app.ui.formatElapsedTime(elapsedMs)} · ${app.ui.formatMoveCount(state.currentMoveCount)}`;
                 elements.levelStats.title = `Time ${app.ui.formatElapsedTime(elapsedMs)}, ${app.ui.formatMoveCount(state.currentMoveCount)}`;
@@ -325,6 +353,7 @@
                 state.awaitingAdvanceAfterWin = true;
                 elements.successMessage.dataset.visible = 'true';
             }, constants.successAdvancePromptDelayMs);
+            app.core.saveResumeState();
         },
 
         scheduleSuccessDialog() {
@@ -385,7 +414,7 @@
                 if (app.ui.isDirectionalInput(inputChar)) {
                     app.ui.startLevelStatsIfNeeded();
                 }
-                app.ui.syncMoveCountFromRuntime();
+                app.ui.syncMoveHistoryFromRuntime();
                 if (state.currentMoveCount === 0) {
                     app.ui.resetLevelStats();
                 } else {
@@ -413,6 +442,8 @@
                 }, constants.eventTickTime);
                 return;
             }
+            app.ui.syncMoveHistoryFromRuntime();
+            app.core.saveResumeState();
             if (app.runtime.isGameWon()) {
                 app.ui.clearQueuedAutoMoves();
                 app.ui.maybeAdvanceLevel();
@@ -756,9 +787,11 @@
             elements.undoButton.addEventListener('pointercancel', app.ui.handleUndoButtonPointerEnd);
             window.addEventListener('focus', app.ui.scheduleGameplayFocusRestore);
             window.addEventListener('blur', app.ui.stopUndoRepeat);
+            window.addEventListener('pagehide', app.core.saveResumeState);
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) {
                     app.ui.stopUndoRepeat();
+                    app.core.saveResumeState();
                     return;
                 }
                 app.ui.scheduleGameplayFocusRestore();

@@ -5,12 +5,15 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // Global game state object
 GameState game_state;
 static bool web_history_initialized = false;
 static ParsedLevelInfo web_level_info = {0};
 static char web_tap_path[MAX_ROWS * MAX_COLS + 1];
+static char *web_move_history = NULL;
+static size_t web_move_history_capacity = 0;
 
 // Replaces the cached web metadata, taking ownership of the parsed strings.
 static void set_web_level_info(ParsedLevelInfo *info) {
@@ -31,6 +34,22 @@ static bool ensure_web_history_initialized(void) {
   }
 
   return game_state.history.moves != NULL;
+}
+
+// Grows the reusable buffer used to expose move history as a C string.
+static bool ensure_web_move_history_capacity(size_t needed_capacity) {
+  if (needed_capacity <= web_move_history_capacity) {
+    return true;
+  }
+
+  char *new_buffer = (char *)realloc(web_move_history, needed_capacity * sizeof(char));
+  if (new_buffer == NULL) {
+    return false;
+  }
+
+  web_move_history = new_buffer;
+  web_move_history_capacity = needed_capacity;
+  return true;
 }
 
 // Loads one level and its display metadata for the web frontend.
@@ -202,12 +221,24 @@ int sokoban_get_initial_cols_web(void) {
 }
 
 EMSCRIPTEN_KEEPALIVE
-// Returns the current number of recorded player moves in the loaded level.
-int sokoban_get_move_count_web(void) {
-  if (game_state.history.size > (size_t)INT_MAX) {
-    return INT_MAX;
+// Returns the current encoded move history as a null-terminated string.
+const char *sokoban_get_move_history_web(void) {
+  size_t move_count = 0;
+
+  if (!ensure_web_history_initialized()) {
+    return "";
   }
-  return (int)game_state.history.size;
+
+  move_count = game_state.history.size;
+  if (!ensure_web_move_history_capacity(move_count + 1)) {
+    return "";
+  }
+
+  if (move_count > 0) {
+    memcpy(web_move_history, game_state.history.moves, move_count);
+  }
+  web_move_history[move_count] = '\0';
+  return web_move_history;
 }
 
 EMSCRIPTEN_KEEPALIVE

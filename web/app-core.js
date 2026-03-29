@@ -30,6 +30,7 @@
         successDialogDelayMs: 1000,
         successAdvancePromptDelayMs: 1000,
         cameraEdgeMarginRatio: 0.2,
+        resumeStorageKey: 'resume-state',
     };
 
     app.elements = {
@@ -73,6 +74,7 @@
         packLabel: 'Loading pack...',
         packUrl: '',
         currentLevelIndex: 0,
+        currentMoveHistory: '',
         totalLevels: 1,
         gameReady: false,
         loadingLevel: false,
@@ -84,6 +86,7 @@
         currentLevelDescription: '',
         currentPackMetadata: '',
         currentMoveCount: 0,
+        elapsedTimeMs: 0,
         firstMoveTimestamp: null,
         awaitingAdvanceAfterWin: false,
         gameplayFocusTimer: null,
@@ -98,6 +101,200 @@
     app.core = {
         builtInPacks: normalizeBuiltInPacks(window.SokobanWebConfig?.builtInPacks),
 
+        getRequestedPackUrl() {
+            return new URLSearchParams(window.location.search).get('l');
+        },
+
+        readResumeState() {
+            let rawResumeState = '';
+
+            try {
+                rawResumeState = window.localStorage.getItem(app.constants.resumeStorageKey) || '';
+            } catch (error) {
+                console.warn('Could not read saved progress from localStorage.', error);
+                return null;
+            }
+
+            if (rawResumeState === '') {
+                return null;
+            }
+
+            let parsedResumeState = null;
+
+            try {
+                parsedResumeState = JSON.parse(rawResumeState);
+            } catch (error) {
+                app.core.clearResumeState();
+                console.warn('Ignoring invalid saved progress.', error);
+                return null;
+            }
+
+            if (parsedResumeState === null || typeof parsedResumeState !== 'object') {
+                app.core.clearResumeState();
+                return null;
+            }
+
+            const packText = typeof parsedResumeState.packText === 'string' ? parsedResumeState.packText : '';
+            if (packText.trim() === '') {
+                app.core.clearResumeState();
+                return null;
+            }
+
+            const packLabel = typeof parsedResumeState.packLabel === 'string' && parsedResumeState.packLabel.trim() !== ''
+                ? parsedResumeState.packLabel.trim()
+                : 'Saved pack';
+            const packUrl = typeof parsedResumeState.packUrl === 'string' ? parsedResumeState.packUrl : '';
+            const initialLevelIndex = Number.isInteger(parsedResumeState.currentLevelIndex) && parsedResumeState.currentLevelIndex >= 0
+                ? parsedResumeState.currentLevelIndex
+                : 0;
+            const moveHistory = typeof parsedResumeState.moveHistory === 'string' && /^[UDLRudlr]*$/.test(parsedResumeState.moveHistory)
+                ? parsedResumeState.moveHistory
+                : '';
+            const elapsedTimeMs = Number.isFinite(parsedResumeState.elapsedTimeMs) && parsedResumeState.elapsedTimeMs >= 0
+                ? parsedResumeState.elapsedTimeMs
+                : null;
+
+            return {
+                pack: {
+                    text: packText,
+                    label: packLabel,
+                    url: packUrl
+                },
+                initialLevelIndex,
+                moveHistory,
+                elapsedTimeMs
+            };
+        },
+
+        clearResumeState() {
+            try {
+                window.localStorage.removeItem(app.constants.resumeStorageKey);
+            } catch (error) {
+                console.warn('Could not clear saved progress from localStorage.', error);
+            }
+        },
+
+        saveResumeState() {
+            const { state } = app;
+
+            if (!state.gameReady || state.packText.trim() === '') {
+                return;
+            }
+            if (typeof app.runtime.isEventOngoing === 'function' && app.runtime.isEventOngoing()) {
+                return;
+            }
+
+            try {
+                app.ui.syncMoveHistoryFromRuntime();
+                window.localStorage.setItem(app.constants.resumeStorageKey, JSON.stringify({
+                    packText: state.packText,
+                    packLabel: state.packLabel,
+                    packUrl: state.packUrl,
+                    currentLevelIndex: state.currentLevelIndex,
+                    moveHistory: state.currentMoveHistory,
+                    elapsedTimeMs: state.currentMoveHistory === '' ? null : app.ui.getElapsedTimeMs()
+                }));
+            } catch (error) {
+                console.warn('Could not save progress to localStorage.', error);
+            }
+        },
+
+        settleActiveEvents(maxIterations = 4096) {
+            let iterations = 0;
+
+            while (app.runtime.isEventOngoing()) {
+                app.runtime.processEvent();
+                iterations += 1;
+
+                if (iterations > maxIterations) {
+                    return false;
+                }
+            }
+
+            return true;
+        },
+
+        getInputCharForMoveHistory(moveChar) {
+            switch (moveChar.toLowerCase()) {
+                case 'u':
+                    return 'w';
+                case 'd':
+                    return 's';
+                case 'l':
+                    return 'a';
+                case 'r':
+                    return 'd';
+                default:
+                    return '';
+            }
+        },
+
+        replayMoveHistory(moveHistory) {
+            for (const moveChar of moveHistory) {
+                const inputChar = app.core.getInputCharForMoveHistory(moveChar);
+
+                if (inputChar === '') {
+                    return false;
+                }
+                if (!app.runtime.handleInput(inputChar.charCodeAt(0))) {
+                    return false;
+                }
+                if (!app.core.settleActiveEvents()) {
+                    return false;
+                }
+            }
+
+            return true;
+        },
+
+        restoreSavedProgress(levelIndex, savedProgress) {
+            const { state } = app;
+            const moveHistory = typeof savedProgress?.moveHistory === 'string' ? savedProgress.moveHistory : '';
+            const elapsedTimeMs = Number.isFinite(savedProgress?.elapsedTimeMs) && savedProgress.elapsedTimeMs >= 0
+                ? savedProgress.elapsedTimeMs
+                : 0;
+
+            state.currentMoveHistory = '';
+            state.elapsedTimeMs = 0;
+            state.firstMoveTimestamp = null;
+
+            if (moveHistory === '') {
+                return true;
+            }
+            if (!app.core.replayMoveHistory(moveHistory)) {
+                if (!app.runtime.initLevel(state.packText, levelIndex)) {
+                    return false;
+                }
+                app.ui.syncCurrentLevelInfoFromRuntime();
+                return false;
+            }
+
+            app.ui.syncMoveHistoryFromRuntime();
+            if (state.currentMoveHistory !== moveHistory) {
+                if (!app.runtime.initLevel(state.packText, levelIndex)) {
+                    return false;
+                }
+                app.ui.syncCurrentLevelInfoFromRuntime();
+                app.ui.syncMoveHistoryFromRuntime();
+                return false;
+            }
+            if (state.currentMoveCount === 0) {
+                state.currentMoveHistory = '';
+                state.elapsedTimeMs = 0;
+                state.firstMoveTimestamp = null;
+                return true;
+            }
+
+            if (app.runtime.isGameWon()) {
+                state.elapsedTimeMs = elapsedTimeMs;
+                state.firstMoveTimestamp = null;
+            } else {
+                app.ui.startLevelTimer(elapsedTimeMs);
+            }
+            app.ui.refreshLevelStats();
+            return true;
+        },
+
         bindRuntimeApi() {
             app.runtime.initLevel = Module.cwrap('sokoban_init_web_level', 'boolean', ['string', 'number']);
             app.runtime.countLevels = Module.cwrap('sokoban_count_levels_web', 'number', ['string']);
@@ -110,7 +307,7 @@
             app.runtime.processEvent = Module.cwrap('sokoban_process_event', 'boolean', []);
             app.runtime.getRows = Module.cwrap('sokoban_get_rows', 'number', []);
             app.runtime.getCols = Module.cwrap('sokoban_get_cols', 'number', []);
-            app.runtime.getMoveCount = Module.cwrap('sokoban_get_move_count_web', 'number', []);
+            app.runtime.getMoveHistory = Module.cwrap('sokoban_get_move_history_web', 'string', []);
             app.runtime.getTile = Module.cwrap('sokoban_get_tile', 'number', ['number', 'number']);
             app.runtime.getInitialRows = Module.cwrap('sokoban_get_initial_rows_web', 'number', []);
             app.runtime.getInitialCols = Module.cwrap('sokoban_get_initial_cols_web', 'number', []);
@@ -144,19 +341,25 @@
             };
         },
 
-        async activatePack(loadedPack, clearUrlParam = false) {
+        async activatePack(loadedPack, options = {}) {
             const { state } = app;
+            const { clearUrlParam = false, initialLevelIndex = 0, savedProgress = null } = options;
             const detectedLevels = app.runtime.countLevels(loadedPack.text);
 
             if (detectedLevels <= 0) {
                 throw new Error('No valid Sokoban levels were found.');
             }
 
+            const clampedLevelIndex = Math.min(
+                Math.max(Number.isInteger(initialLevelIndex) ? initialLevelIndex : 0, 0),
+                detectedLevels - 1
+            );
+
             state.packText = loadedPack.text;
             state.packLabel = loadedPack.label;
             state.packUrl = loadedPack.url;
             state.totalLevels = detectedLevels;
-            state.currentLevelIndex = 0;
+            state.currentLevelIndex = clampedLevelIndex;
 
             if (clearUrlParam) {
                 const nextUrl = new URL(window.location.href);
@@ -165,8 +368,8 @@
                 window.history.replaceState(null, '', nextUrl.toString());
             }
 
-            if (!app.core.loadLevel(0)) {
-                throw new Error('The first level could not be loaded.');
+            if (!app.core.loadLevel(clampedLevelIndex, { savedProgress })) {
+                throw new Error(`Level ${clampedLevelIndex + 1} could not be loaded.`);
             }
         },
 
@@ -185,7 +388,7 @@
                         label: file.name,
                         url: ''
                     },
-                    true
+                    { clearUrlParam: true }
                 );
                 elements.packDialog.close();
                 app.ui.setPackDialogMessage('');
@@ -197,8 +400,10 @@
             }
         },
 
-        loadLevel(levelIndex) {
+        loadLevel(levelIndex, options = {}) {
             const { state } = app;
+            const { savedProgress = null } = options;
+            let restoredSavedProgress = false;
 
             app.ui.resetLevelStats();
             state.loadingLevel = true;
@@ -217,30 +422,75 @@
             }
 
             app.ui.syncCurrentLevelInfoFromRuntime();
+            if (savedProgress !== null) {
+                restoredSavedProgress = app.core.restoreSavedProgress(levelIndex, savedProgress);
+                if (!restoredSavedProgress) {
+                    app.core.clearResumeState();
+                    app.ui.resetLevelStats();
+                }
+            }
+
             state.loadingLevel = false;
             state.gameReady = true;
+            if (savedProgress === null || restoredSavedProgress) {
+                app.ui.syncMoveHistoryFromRuntime();
+            }
             app.ui.refreshLevelInfo();
             app.ui.hidePackErrorCallout();
             app.board.drawBoard(true);
+            app.ui.refreshLevelStats();
             app.ui.scheduleGameplayFocusRestore();
+            app.core.saveResumeState();
+            app.ui.maybeAdvanceLevel();
             return true;
         },
 
         async loadRequestedPack() {
-            const levelParam = new URLSearchParams(window.location.search).get('l');
+            const levelParam = app.core.getRequestedPackUrl();
+            const resumeState = app.core.readResumeState();
 
             if (levelParam === null) {
+                if (resumeState !== null) {
+                    return resumeState;
+                }
                 if (app.core.builtInPacks.length === 0) {
                     return null;
                 }
-                return app.core.fetchPackFromUrl(app.core.builtInPacks[0].url, app.core.builtInPacks[0].label);
+                return {
+                    pack: await app.core.fetchPackFromUrl(app.core.builtInPacks[0].url, app.core.builtInPacks[0].label),
+                    initialLevelIndex: 0
+                };
             }
             if (levelParam.trim() === '') {
                 throw new Error("The 'l' query parameter is empty.");
             }
 
             const builtInPack = app.core.findBuiltInPackByUrl(levelParam);
-            return app.core.fetchPackFromUrl(levelParam, builtInPack ? builtInPack.label : '');
+            const requestedPackUrl = new URL(levelParam, window.location.href).href;
+            const matchingResumeState = resumeState !== null && resumeState.pack.url === requestedPackUrl
+                ? resumeState
+                : null;
+            let requestedPack = null;
+
+            try {
+                requestedPack = await app.core.fetchPackFromUrl(levelParam, builtInPack ? builtInPack.label : '');
+            } catch (error) {
+                if (matchingResumeState !== null) {
+                    return matchingResumeState;
+                }
+                throw error;
+            }
+
+            const initialLevelIndex = matchingResumeState !== null
+                ? matchingResumeState.initialLevelIndex
+                : 0;
+
+            return {
+                pack: requestedPack,
+                initialLevelIndex,
+                moveHistory: matchingResumeState?.moveHistory || '',
+                elapsedTimeMs: matchingResumeState?.elapsedTimeMs ?? null
+            };
         },
 
         async initGame() {
@@ -251,13 +501,19 @@
                 app.ui.resetLevelStats();
                 app.ui.hidePackErrorCallout();
 
-                const requestedPack = await app.core.loadRequestedPack();
-                if (requestedPack === null) {
+                const loadTarget = await app.core.loadRequestedPack();
+                if (loadTarget === null) {
                     app.ui.showPackSelectionState();
                     return;
                 }
 
-                await app.core.activatePack(requestedPack);
+                await app.core.activatePack(loadTarget.pack, {
+                    initialLevelIndex: loadTarget.initialLevelIndex,
+                    savedProgress: {
+                        moveHistory: loadTarget.moveHistory,
+                        elapsedTimeMs: loadTarget.elapsedTimeMs
+                    }
+                });
             } catch (error) {
                 elements.board.innerHTML = '';
                 elements.source.textContent = '';
